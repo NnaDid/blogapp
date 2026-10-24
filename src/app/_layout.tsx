@@ -12,9 +12,9 @@ function RouteGuard() {
   useEffect(() => {
     if (loading) return;
     const inAuthGroup = segments[0] === '(auth)';
-    const inTabsGroup = segments[0] === '(tabs)';
+    const inProtectedRoute = segments[0] === '(tabs)' || segments[0] === 'post';
 
-    if (!user && inTabsGroup) {
+    if (!user && inProtectedRoute) {
       router.replace('/(auth)/login');
     } else if (user && inAuthGroup) {
       router.replace('/(tabs)');
@@ -27,6 +27,10 @@ function RouteGuard() {
       <Stack.Screen name="index" />
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen
+        name="post/[id]"
+        options={{ headerShown: true, title: 'Conversation' }}
+      />
     </Stack>
   );
 }

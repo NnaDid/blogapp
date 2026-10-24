@@ -8,105 +8,118 @@ import {
   type ReactNode,
 } from 'react';
 
-import { ApiError, apiRequest, type User } from '@/lib/api';
-import { clearSession, readSession, writeSession } from '@/lib/session';
-
-type AuthResponse = {
-  user: User;
-  token: string;
-  token_type: string;
-};
+import type { User } from '@/lib/api';
+import { getSupabase } from '@/lib/supabase';
 
 type AuthContextValue = {
   user: User | null;
-  token: string | null;
   loading: boolean;
-  signIn: (login: string, password: string) => Promise<void>;
+  initializationError: string | null;
+  signIn: (email: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function toUser(authUser: {
+  id: string;
+  email?: string;
+  created_at: string;
+  user_metadata: Record<string, unknown>;
+}): User {
+  const username = authUser.user_metadata.username;
+  return {
+    id: authUser.id,
+    username: typeof username === 'string' ? username : authUser.email?.split('@')[0] ?? 'user',
+    email: authUser.email ?? '',
+    created_at: authUser.created_at,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initializationError, setInitializationError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    async function restore() {
-      try {
-        const stored = await readSession();
-        if (!stored) return;
-        if (active) {
-          setToken(stored.token);
-          setUser(stored.user);
-        }
-        try {
-          const response = await apiRequest<{ user: User }>('/me', {}, stored.token);
+    let unsubscribe: (() => void) | undefined;
+
+    void Promise.resolve()
+      .then(() => getSupabase())
+      .then((supabase) => {
+        if (!active) return null;
+        const result = supabase.auth.onAuthStateChange((_event, session) => {
           if (active) {
-            setUser(response.user);
-            await writeSession({ token: stored.token, user: response.user });
+            setUser(session ? toUser(session.user) : null);
+            setInitializationError(null);
+            setLoading(false);
           }
-        } catch (error) {
-          if (error instanceof ApiError && error.status === 401) {
-            await clearSession();
-            if (active) {
-              setToken(null);
-              setUser(null);
-            }
-          }
+        });
+        unsubscribe = () => result.data.subscription.unsubscribe();
+        return supabase.auth.getSession();
+      })
+      .then((result) => {
+        if (!active || !result) return;
+        const { data, error } = result;
+        if (error) {
+          setInitializationError(error.message);
+          setUser(null);
+        } else {
+          setUser(data.session ? toUser(data.session.user) : null);
+          setInitializationError(null);
         }
-      } catch {
-        await clearSession();
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-    void restore();
+        setLoading(false);
+      })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        setInitializationError(
+          cause instanceof Error ? cause.message : 'Could not restore your Supabase session.'
+        );
+        setUser(null);
+        setLoading(false);
+      });
+
     return () => {
       active = false;
+      unsubscribe?.();
     };
   }, []);
 
-  const acceptAuth = useCallback(async (response: AuthResponse) => {
-    await writeSession({ token: response.token, user: response.user });
-    setToken(response.token);
-    setUser(response.user);
+  const signIn = useCallback(async (email: string, password: string) => {
+    const { error } = await getSupabase().auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
   }, []);
-
-  const signIn = useCallback(
-    async (login: string, password: string) => {
-      const response = await apiRequest<AuthResponse>('/login', {
-        method: 'POST',
-        body: JSON.stringify({ login, password }),
-      });
-      await acceptAuth(response);
-    },
-    [acceptAuth]
-  );
 
   const register = useCallback(
     async (username: string, email: string, password: string) => {
-      const response = await apiRequest<AuthResponse>('/register', {
-        method: 'POST',
-        body: JSON.stringify({ username, email, password }),
+      const supabase = getSupabase();
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { username } },
       });
-      await acceptAuth(response);
+      if (error) throw error;
+      if (data.session) {
+        const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+        if (signOutError) throw signOutError;
+      }
     },
-    [acceptAuth]
+    []
   );
 
   const signOut = useCallback(async () => {
-    await clearSession();
-    setToken(null);
-    setUser(null);
+    const { error } = await getSupabase().auth.signOut();
+    if (error) throw error;
   }, []);
 
   const value = useMemo(
-    () => ({ user, token, loading, signIn, register, signOut }),
-    [user, token, loading, signIn, register, signOut]
+    () => ({ user, loading, initializationError, signIn, register, signOut }),
+    [user, loading, initializationError, signIn, register, signOut]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

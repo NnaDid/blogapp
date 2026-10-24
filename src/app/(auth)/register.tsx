@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -13,7 +13,7 @@ import { Button, Field, Notice, palette } from '@/components/ui';
 import { useAuth } from '@/context/auth-context';
 
 export default function RegisterScreen() {
-  const { register } = useAuth();
+  const { register, initializationError } = useAuth();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,7 +33,12 @@ export default function RegisterScreen() {
     setSubmitting(true);
     try {
       await register(username.trim(), email.trim(), password);
+      router.replace({
+        pathname: '/(auth)/login',
+        params: { registered: 'true', email: email.trim() },
+      });
     } catch (cause) {
+      console.log(cause);
       setError(cause instanceof Error ? cause.message : 'Unable to create your account.');
     } finally {
       setSubmitting(false);
@@ -53,6 +58,7 @@ export default function RegisterScreen() {
         <Text style={styles.eyebrow}>YOUR NEXT CHAPTER STARTS HERE</Text>
         <Text style={styles.title}>Join the{'\n'}conversation.</Text>
         <Text style={styles.subtitle}>Make a home for the ideas you want to share.</Text>
+        {!!initializationError && <Notice danger>{initializationError}</Notice>}
         {!!error && <Notice danger>{error}</Notice>}
         <Field
           autoCapitalize="none"

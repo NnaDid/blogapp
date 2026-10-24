@@ -1,56 +1,33 @@
-# Welcome to your Expo app 👋
+# Blogapp
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+An Expo / React Native community blogging app backed by Supabase Auth and Postgres.
 
-## Get started
+## Supabase setup
 
-1. Install dependencies
+1. Create a project at [supabase.com/dashboard](https://supabase.com/dashboard).
+2. In the Supabase SQL Editor, run [`supabase/migrations/20261024000000_initial_schema.sql`](./supabase/migrations/20261024000000_initial_schema.sql).
+   This creates the app's public profiles, posts, comments, and likes tables, sets up a profile when a Supabase Auth user registers, and enables row-level security.
+3. Copy `.env.example` to `.env` (merge these settings into an existing `.env` rather than overwriting other local settings). In the Supabase project's **Connect** dialog, copy the project URL and publishable key (the legacy `anon` key also works) into:
+
+   ```dotenv
+   EXPO_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+   EXPO_PUBLIC_SUPABASE_ANON_KEY=your-publishable-key
+   ```
+
+   Never put a `service_role` key in the app or any `EXPO_PUBLIC_` variable.
+4. Install dependencies and launch the app:
 
    ```bash
    npm install
-   ```
-
-2. Start the app
-
-   ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+   If the Expo dev server was already running, restart it after changing `.env`.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+The app uses Supabase Auth for email/password accounts and stores the username in Auth user metadata and `public.profiles`. To let users sign in immediately after registration without confirming their email, open **Authentication → Sign In / Providers → Email** in the Supabase dashboard and turn off **Confirm email**. Registration signs out any session created by Supabase and sends the user to the login screen; they must sign in with their email and password before accessing the dashboard. If email confirmation remains enabled in Supabase, sign-in will require confirmation despite the app redirecting to login.
 
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## Database model
 
-## Get a fresh project
+Supabase owns credentials in `auth.users`; the app must not create or expose a `password_hash` column. `public.profiles.id` references `auth.users.id`, and its username is created by a database trigger. Post and comment authors are linked to profiles. Likes have a unique `(post_id, user_id)` constraint, while reshares use `posts.original_post_id`.
 
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
-
-### Other setup steps
-
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+The SQL migration targets a new Supabase project. It intentionally grants public read access to profiles (usernames only), posts, comments, and like rows; write policies require an authenticated user and restrict writes to that user's own rows.

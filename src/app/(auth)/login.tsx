@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -13,8 +13,12 @@ import { Button, Field, Notice, palette } from '@/components/ui';
 import { useAuth } from '@/context/auth-context';
 
 export default function LoginScreen() {
-  const { signIn } = useAuth();
-  const [login, setLogin] = useState('');
+  const { signIn, initializationError } = useAuth();
+  const { registered, email: registeredEmail } = useLocalSearchParams<{
+    registered?: string;
+    email?: string;
+  }>();
+  const [login, setLogin] = useState(registeredEmail ?? '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -22,7 +26,7 @@ export default function LoginScreen() {
   async function submit() {
     setError('');
     if (!login.trim() || !password) {
-      setError('Enter your username or email and password.');
+      setError('Enter your email address and password.');
       return;
     }
     setSubmitting(true);
@@ -48,14 +52,16 @@ export default function LoginScreen() {
         <Text style={styles.eyebrow}>A LITTLE SPACE FOR YOUR THOUGHTS</Text>
         <Text style={styles.title}>Welcome{'\n'}back.</Text>
         <Text style={styles.subtitle}>Sign in to find your people and pick up where you left off.</Text>
+        {registered === 'true' && <Notice>Your account is ready. Sign in to continue.</Notice>}
+        {!!initializationError && <Notice danger>{initializationError}</Notice>}
         {!!error && <Notice danger>{error}</Notice>}
         <Field
           autoCapitalize="none"
-          autoComplete="username"
+          autoComplete="email"
           autoCorrect={false}
           onChangeText={setLogin}
           onSubmitEditing={submit}
-          placeholder="Username or email"
+          placeholder="Email address"
           returnKeyType="next"
           value={login}
         />

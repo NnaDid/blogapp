@@ -4,10 +4,10 @@ import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text } from 'react-n
 
 import { Button, Field, Heading, Page, palette } from '@/components/ui';
 import { useAuth } from '@/context/auth-context';
-import { apiRequest } from '@/lib/api';
+import { createPost } from '@/lib/api';
 
 export default function CreatePostScreen() {
-  const { token } = useAuth();
+  const { user } = useAuth();
   const [content, setContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -19,10 +19,8 @@ export default function CreatePostScreen() {
     }
     setSubmitting(true);
     try {
-      await apiRequest('/posts', {
-        method: 'POST',
-        body: JSON.stringify({ content: text }),
-      }, token);
+      if (!user) throw new Error('Sign in to publish a post.');
+      await createPost(text, user.id);
       setContent('');
       router.replace('/(tabs)');
     } catch (cause) {

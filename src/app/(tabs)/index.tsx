@@ -11,16 +11,11 @@ import {
 
 import { PostCard } from '@/components/post-card';
 import { palette } from '@/components/ui';
-import { apiRequest, ApiError, isEnabled, type Post } from '@/lib/api';
+import { fetchFeed, isEnabled, resharePost, setPostLike, type Post } from '@/lib/api';
 import { useAuth } from '@/context/auth-context';
 
-type FeedResponse = {
-  data: Post[];
-  pagination: { page: number; limit: number };
-};
-
 export default function FeedScreen() {
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -28,16 +23,38 @@ export default function FeedScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    void fetchFeed(1, 20, user.id)
+      .then((response) => {
+        if (!active) return;
+        setError('');
+        setPosts(response.data);
+        setPage(1);
+        setHasMore(response.data.length === response.pagination.limit);
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setError(cause instanceof Error ? cause.message : 'Could not load the feed.');
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
   const loadFeed = useCallback(async (nextPage: number, replace: boolean) => {
-    setError('');
-    if (replace) setRefreshing(true);
-    else setLoading(true);
     try {
-      const response = await apiRequest<FeedResponse>(
-        `/posts?page=${nextPage}&limit=20`,
-        {},
-        token
-      );
+      if (!user) return;
+      const response = await fetchFeed(nextPage, 20, user.id);
+      setError('');
       setPosts((current) => (replace ? response.data : [...current, ...response.data]));
       setPage(nextPage);
       setHasMore(response.data.length === response.pagination.limit);
@@ -47,11 +64,7 @@ export default function FeedScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token]);
-
-  useEffect(() => {
-    void loadFeed(1, true);
-  }, [loadFeed]);
+  }, [user]);
 
   async function toggleLike(post: Post) {
     const wasLiked = isEnabled(post.liked_by_me);
@@ -68,11 +81,8 @@ export default function FeedScreen() {
       )
     );
     try {
-      const result = await apiRequest<{ liked: boolean; likes_count: number }>(
-        `/posts/${postId}/like`,
-        { method: wasLiked ? 'DELETE' : 'POST' },
-        token
-      );
+      if (!user) throw new Error('Sign in to like posts.');
+      const result = await setPostLike(postId, user.id, !wasLiked);
       setPosts((current) =>
         current.map((item) =>
           String(item.id) === postId
@@ -94,7 +104,9 @@ export default function FeedScreen() {
 
   async function reshare(post: Post) {
     try {
-      await apiRequest(`/posts/${post.id}/reshare`, { method: 'POST' }, token);
+      if (!user) throw new Error('Sign in to reshare posts.');
+      await resharePost(String(post.id), user.id);
+      setRefreshing(true);
       await loadFeed(1, true);
     } catch (cause) {
       Alert.alert('Reshare not saved', cause instanceof Error ? cause.message : 'Please try again.');
@@ -109,7 +121,10 @@ export default function FeedScreen() {
       {!!error && (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable onPress={() => void loadFeed(1, true)}>
+          <Pressable onPress={() => {
+            setRefreshing(true);
+            void loadFeed(1, true);
+          }}>
             <Text style={styles.retry}>Try again</Text>
           </Pressable>
         </View>
@@ -133,20 +148,24 @@ export default function FeedScreen() {
             <Text style={styles.emptyTitle}>A fresh page.</Text>
             <Text style={styles.emptyText}>Be the first to share a thought with the community.</Text>
           </View>
-        ) : null
+        ) : undefined
       }
       ListFooterComponent={
-        loading && !refreshing ? <Text style={styles.loadingText}>Loading posts…</Text> : null
+        loading && !refreshing ? <Text style={styles.loadingText}>Loading posts…</Text> : undefined
       }
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={() => void loadFeed(1, true)}
+          onRefresh={() => {
+            setRefreshing(true);
+            void loadFeed(1, true);
+          }}
           tintColor={palette.green}
         />
       }
       onEndReached={() => {
         if (hasMore && !loading && !refreshing && posts.length > 0) {
+          setLoading(true);
           void loadFeed(page + 1, false);
         }
       }}

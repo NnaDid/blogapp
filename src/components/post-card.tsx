@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { palette } from '@/components/ui';
@@ -42,11 +42,16 @@ export function PostCard({
             {isEnabled(post.liked_by_me) ? '♥' : '♡'}  {Number(post.likes_count)}
           </Text>
         </Pressable>
-        <Link href={{ pathname: '/(tabs)/post/[id]', params: { id: String(post.id) } }} asChild>
-          <Pressable accessibilityRole="button">
-            <Text style={styles.action}>Comment  {Number(post.comments_count)}</Text>
-          </Pressable>
-        </Link>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            router.push({
+              pathname: '/post/[id]',
+              params: { id: String(post.id) },
+            })
+          }>
+          <Text style={styles.action}>Comment  {Number(post.comments_count)}</Text>
+        </Pressable>
         <Pressable onPress={onReshare} accessibilityRole="button">
           <Text style={styles.action}>↻  Reshare</Text>
         </Pressable>
